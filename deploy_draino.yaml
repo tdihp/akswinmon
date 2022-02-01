@@ -1,0 +1,109 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: akswinmon-config
+  namespace: kube-system
+data:
+  subscription: "00000000-0000-0000-0000-000000000000"
+---
+# to get the content:
+# az ad sp create-for-rbac --name ServicePrincipalName --role "Virtual Machine Contributor" \
+#   --scope /subscriptions/0b1f6471-1bf0-4dda-aec3-111122223333/resourceGroups/node-resource-group
+apiVersion: v1
+kind: Secret
+metadata:
+  name: akswinmon-secret
+  namespace: kube-system
+type: Opaque
+stringData:
+  AZURE_TENANT_ID: "00000000-0000-0000-0000-000000000000"
+  AZURE_CLIENT_ID: "00000000-0000-0000-0000-000000000000"
+  AZURE_CLIENT_SECRET: ""
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: akswinmon
+  namespace: kube-system
+  labels:
+    app: akswinmon
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: akswinmon
+  labels:
+    app: akswinmon
+rules:
+- apiGroups: [""]
+  resources: [nodes]
+  verbs: [get, watch, list, update]
+- apiGroups: [""]
+  resources: [nodes/status]
+  verbs: [patch]
+- apiGroups: [""]
+  resources: [events]
+  verbs: [list, watch, create, patch, update]
+- apiGroups: [""]
+  resources: [pods]
+  verbs: [get, watch, list]
+- apiGroups: [""]
+  resources: [pods/eviction]
+  verbs: [create]
+- apiGroups: [extensions]
+  resources: [daemonsets]
+  verbs: [get, watch, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: akswinmon
+  labels:
+    app: akswinmon
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: akswinmon
+subjects:
+- kind: ServiceAccount
+  name: akswinmon
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: akswinmon
+  namespace: kube-system
+  labels:
+    app: akswinmon
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: akswinmon
+  template:
+    metadata:
+      labels:
+        app: akswinmon
+    spec:
+      nodeSelector:
+        beta.kubernetes.io/os: linux
+        kubernetes.azure.com/mode: system
+      serviceAccountName: akswinmon
+      containers:
+      - name: akswinmon
+        image: tdihp/akswinmon:latest
+        imagePullPolicy: Always
+        # "Successfully registered node" is for testing purpose. For actual deployment remove the -m option
+        args: ['--subscription', '$(subscription)', '-m', 'Select-String -Path C:\k\kubelet.err.log -SimpleMatch -Pattern "Successfully registered node" | Select-Object -First 1']
+        envFrom:
+          - secretRef:
+              name: akswinmon-secret
+          - configMapRef:
+              name: akswinmon-config
+      - name: draino
+        command: [/draino, --drain-buffer=0, --node-label=kubernetes.io/os=windows, MarkedUnhealthyByCustomer]
+        image: planetlabs/draino:5e07e93
+        livenessProbe:
+          httpGet: {path: /healthz, port: 10002}
+          initialDelaySeconds: 30

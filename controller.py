@@ -191,6 +191,7 @@ class Remediator(object):
 
     def remediate_node(self, ctx, node_name):
         log = self.logger.getChild('remediate_node(%s)' % node_name)
+        log.info('remediate node %s', node_name)
         node = self.find_node(ctx, node_name)
         if not node:
             log.info('node not found, ignored, potentially not matching label selector')
@@ -226,9 +227,10 @@ class Remediator(object):
             for i, condition in enumerate(node.status.conditions):
                 if condition.type == self.condition_template.type:
                     patch.append({'op': 'remove', 'path': '/status/conditions/%d' % i})
-        if patch:
-            v1.patch_node_status(node.metadata.name, patch)
-
+            if patch:
+                logger.info('cleanup for node %s', node.metadata.name)
+                v1.patch_node_status(node.metadata.name, patch)
+        logger.info('cleanup complete')
 
 def observer(queue, node_label_selector='kubernetes.io/os=windows', period=600,
         trace_back=300):
@@ -264,16 +266,18 @@ class Worker(threading.Thread):
         self.ctx = ctx
 
     def run(self, ):
-        log = logger.getChild('worker(%d)' % self.ident)
+        log = logger.getChild('worker:%d' % self.ident)
         queue = self.queue
         ctx = self.ctx
-        node_name = queue.get()
-        try:
-            self.remediator.remediate_node(ctx, node_name)
-        except Exception as exc:
-            log.exception('unexpected failure when remediating node %s', node_name)
-        finally:
-            queue.task_done()
+        while True:
+            log.info('ready for new task')
+            node_name = queue.get()
+            try:
+                self.remediator.remediate_node(ctx, node_name)
+            except Exception as exc:
+                log.exception('unexpected failure when remediating node %s', node_name)
+            finally:
+                queue.task_done()
 
 
 def main():
@@ -296,7 +300,7 @@ def main():
         help='Azure subscription id that contains the VMs')
     args = parser.parse_args()
     verbosity = (2  - args.verbose + args.quiet) * 10
-    logging.basicConfig(level=verbosity)
+    logging.basicConfig(level=verbosity, format='%(asctime)s %(levelname)s:%(name)s %(message)s')
     config.load_config()
     if args.cleanup:
         ctx = Context(kclient.ApiClient(), None)
