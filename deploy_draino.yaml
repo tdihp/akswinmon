@@ -95,7 +95,7 @@ spec:
         image: tdihp/akswinmon:latest
         imagePullPolicy: Always
         # "Successfully registered node" is for testing purpose. For actual deployment remove the -m option
-        args: ['--subscription', '$(subscription)', '-m', 'Select-String -Path C:\k\kubelet.err.log -SimpleMatch -Pattern "Successfully registered node" | Select-Object -First 1']
+        args: ['--subscription', '$(subscription)']
         envFrom:
           - secretRef:
               name: akswinmon-secret
