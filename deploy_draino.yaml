@@ -8,7 +8,9 @@ data:
 ---
 # to get the content:
 # az ad sp create-for-rbac --name ServicePrincipalName --role "Virtual Machine Contributor" \
-#   --scope /subscriptions/0b1f6471-1bf0-4dda-aec3-111122223333/resourceGroups/node-resource-group
+#   --scope /subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/node-resource-group
+# For Managed identity:
+# az identity show -n <name> -g <resource-group> --query clientId -otsv
 apiVersion: v1
 kind: Secret
 metadata:
@@ -16,8 +18,11 @@ metadata:
   namespace: kube-system
 type: Opaque
 stringData:
+  # Optional for managed identity setting
   AZURE_TENANT_ID: "00000000-0000-0000-0000-000000000000"
+  # Optional for managed identity setting, if only 1 user identity on the VMSS
   AZURE_CLIENT_ID: "00000000-0000-0000-0000-000000000000"
+  # Only needed for SP setting
   AZURE_CLIENT_SECRET: ""
 ---
 apiVersion: v1
